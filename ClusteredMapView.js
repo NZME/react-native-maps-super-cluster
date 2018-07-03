@@ -39,7 +39,7 @@ export default class ClusteredMapView extends PureComponent {
   }
 
   componentDidMount() {
-    this.clusterize(this.props.data)
+    this.clusterize(this.props.data);
   }
 
   componentWillReceiveProps(nextProps) {
@@ -76,10 +76,15 @@ export default class ClusteredMapView extends PureComponent {
     this.index.load(rawData)
 
     const data = this.getClusters(this.state.region)
-    this.setState({ data })
+    this.setState({ data }, ()=> {
+      this.props.onRegionChangeComplete && this.props.onRegionChangeComplete(this.state.region, this.state.data)
+    })
+
   }
 
-  clustersChanged = (nextState) => this.state.data.length !== nextState.data.length
+  clustersChanged = (nextState) => {
+    return this.state.data.length !== nextState.data.length
+  }
 
   onRegionChangeComplete = (region) => {
     let data
@@ -97,6 +102,19 @@ export default class ClusteredMapView extends PureComponent {
     return this.index.getClusters(bbox, viewport.zoom)
   }
 
+  checkSameLocation(marker, checkMarker) {
+    return (marker &&
+      checkMarker &&
+      marker.location &&
+      checkMarker.location &&
+      typeof marker.location.latitude === 'number' &&
+      typeof marker.location.longitude === 'number' &&
+      typeof checkMarker.location.latitude === 'number' &&
+      typeof checkMarker.location.longitude === 'number' &&
+      marker.location.latitude === checkMarker.location.latitude &&
+      marker.location.longitude === checkMarker.location.longitude);
+  }
+
   onClusterPress = (cluster) => {
 
     // cluster press behavior might be extremely custom.
@@ -109,13 +127,29 @@ export default class ClusteredMapView extends PureComponent {
     // NEW IMPLEMENTATION (with fitToCoordinates)
     // //////////////////////////////////////////////////////////////////////////////////
     // get cluster children
-    const children = this.index.getLeaves(cluster.properties.cluster_id, this.props.clusterPressMaxChildren),
-          markers = children.map(c => c.properties.item)
+    const children = this.index.getLeaves(cluster.properties.cluster_id, this.props.clusterPressMaxChildren);
+    const markers = children.map(c => c.properties.item);
+    
+    //Check to see if all the makers in the cluster has the same location
+    let diffLocations = false;
+    if (markers && markers.length > 0 && markers[0]) {
+      const firstMarker = markers[0];
+      for (var i = 0; i < markers.length; i++) {
+        const isSame = this.checkSameLocation(firstMarker, markers[i]);
+        if (!isSame) {
+          diffLocations = true;
+          break;
+        }
+      }
+    }
 
-    // fit right around them, considering edge padding
-    this.mapview.fitToCoordinates(markers.map(m => m.location), { edgePadding: this.props.edgePadding })
+    if (diffLocations) {
+      // fit right around them, considering edge padding
+      this.mapview.fitToCoordinates(markers.map(m => m.location), { edgePadding: this.props.edgePadding })
+    } 
+    
+    this.props.onClusterPress && this.props.onClusterPress(cluster.properties.cluster_id, markers, !diffLocations)
 
-    this.props.onClusterPress && this.props.onClusterPress(cluster.properties.cluster_id, markers)
   }
 
   render() {
@@ -189,6 +223,7 @@ ClusteredMapView.propTypes = {
   scaleUpRatio: PropTypes.func,
   renderCluster: PropTypes.func,
   onClusterPress: PropTypes.func,
+  onClusterCollectionPress: PropTypes.func,
   renderMarker: PropTypes.func.isRequired,
   // bool
   animateClusters: PropTypes.bool.isRequired,
